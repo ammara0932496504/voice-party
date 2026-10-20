@@ -1,0 +1,8 @@
+{
+  "name": "Voice Party",
+  "url": "https://REPLACE-WITH-YOUR-HOST/",
+  "description": "Join the session",
+  "icon": "https://REPLACE-WITH-YOUR-HOST/icon.png",
+  "discord_app_parameters": { "guild_id": "", "id": "" },
+  "launch": { "type": "GUILD", "name": "Voice Party" }
+}

