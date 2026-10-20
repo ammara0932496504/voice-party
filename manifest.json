@@ -1,8 +1,8 @@
 {
   "name": "Voice Party",
-  "url": "https://REPLACE-WITH-YOUR-HOST/",
+  "url": "https://ammara0932496504.github.io/voice-party/",
   "description": "Join the session",
-  "icon": "https://REPLACE-WITH-YOUR-HOST/icon.png",
+  "icon": "https://ammara0932496504.github.io/voice-party/icon.png",
   "discord_app_parameters": { "guild_id": "", "id": "" },
   "launch": { "type": "GUILD", "name": "Voice Party" }
 }
