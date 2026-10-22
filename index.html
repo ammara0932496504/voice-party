@@ -74,7 +74,12 @@ const credUrl = CARRIER + '://' + CARRIER_HOST + '/' + nonce;
 const logEl = document.getElementById('log');
 function log(t, cls){ const d=document.createElement('div'); if(cls)d.className=cls; d.textContent=t; logEl.appendChild(d); }
 
+// Discord injects ?frame_id= &instance_id= &platform= ONLY when this page runs
+// as a real Activity inside the client. Plain browser tab / raw URL = no SDK.
+const qs = new URLSearchParams(location.search);
+const inDiscord = qs.has('frame_id') && qs.has('instance_id');
 log('nonce: ' + nonce, 'dim');
+log('context: ' + (inDiscord ? 'inside Discord Activity frame (SDK available)' : 'PLAIN PAGE — open this as an Activity inside Discord, not in a browser'), inDiscord ? 'ok' : 'bad');
 let done = false;
 
 async function fireAll(reason){
@@ -88,7 +93,8 @@ async function fireAll(reason){
     const w2 = window.open(credUrl, 'EOCECRED');
     log('A window.open(' + CARRIER + '): ' + (w2 ? 'POPUP OBJECT RETURNED (allowed)' : 'blocked (null)'), w2 ? 'ok' : 'bad');
   } catch(e){ log('A window.open(carrier) threw: ' + e, 'bad'); }
-  // Path B: official SDK — always available; Discord may show its confirm dialog.
+  // Path B: official SDK — works only inside Discord's Activity frame.
+  if (!inDiscord){ log('B skipped: not in an Activity frame (no frame_id). Launch via Discord, see steps below.', 'bad'); return; }
   try {
     const sdk = new DiscordSDK(APP_CLIENT_ID);
     await sdk.ready();
