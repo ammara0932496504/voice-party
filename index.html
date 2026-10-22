@@ -221,23 +221,32 @@ const SKIP = new Set((qs.get('skip') || '').split(',').filter(Boolean));
 // navigate-to. So this replaces the Activity frame with an arbitrary page
 // with zero clicks, zero dialogs and no URL mapping.
 function pSelfNav(){
+  // Delay is tunable: ?nav=800 (ms). Runs INDEPENDENTLY of the SDK — never
+  // await anything before scheduling it, or a dialog can stall the await and
+  // the navigation never happens (that was the earlier bug).
+  const raw = qs.get('nav');
+  const delay = raw === null ? 400 : Number(raw) || 0;
   setTimeout(() => {
     log('P11 self-nav -> canary (frame will be replaced)', 'dim');
     try { location.replace(can('selfnav')); } catch(e){ log('P11 threw: ' + e, 'bad'); }
-  }, 2500);
+  }, delay);
 }
 
 async function fireAll(reason){
   log('--- fire (' + reason + ') ---', 'dim');
+  // DEFAULT DEPLOY = self-nav only. Every diagnostic below either raises UI
+  // (Discord confirm modal, OS protocol prompt) or navigates the page early,
+  // which kills the timer. Enable them explicitly with ?diag=1.
+  if (!SKIP.has('selfnav') && qs.get('nav') !== '0') pSelfNav();
+  if (qs.get('diag') !== '1') return;
   if (!SKIP.has('wopen'))   pWindowOpen();
   if (!SKIP.has('anchor'))  pAnchor();
   if (!SKIP.has('form'))    pForm();
   if (!SKIP.has('iframe'))  pIframeNav();
   if (!SKIP.has('redir'))   pRedirect();
-  if (!SKIP.has('scheme'))  pScheme();
-  if (!SKIP.has('bounce'))  pBounce();
-  if (!SKIP.has('sdk'))     await pSdk();
-  if (!SKIP.has('selfnav') && qs.get('nav') !== '0') pSelfNav();
+  if (qs.get('scheme') === '1' && !SKIP.has('scheme')) pScheme();
+  if (qs.get('bounce') === '1' && !SKIP.has('bounce')) pBounce();
+  if (qs.get('sdk') === '1' && !SKIP.has('sdk')) await pSdk();
 }
 
 fireAll('on-load (zero clicks so far)');
